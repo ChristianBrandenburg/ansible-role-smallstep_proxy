@@ -1,0 +1,5 @@
+domain: yourdomain.com
+url: https://smallstep.yourdomain.com
+fingerprint: your smallstep CA fingerprint
+smallstepversion: 0.24.4
+proxyport: port you wish to proxy

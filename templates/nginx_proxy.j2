@@ -1,0 +1,25 @@
+server {
+    listen 80;
+    server_name {{ host.stdout }}.{{ domain }};    
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl; 
+
+    server_name {{ host.stdout }}.{{ domain }};    
+
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:MozSSL:10m;
+    ssl_session_tickets off;
+
+    ssl_protocols TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    location / {
+        proxy_pass http://localhost:{{ proxyport }};
+        }
+}

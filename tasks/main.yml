@@ -1,0 +1,84 @@
+  - name: Download and install Smallstep CLI
+    ansible.builtin.apt:
+      deb: https://dl.step.sm/gh-release/cli/docs-cli-install/v{{smallstepversion}}/step-cli_{{smallstepversion}}_amd64.deb
+    become: yes
+
+  - name: Install Smallstep root CA
+    ansible.builtin.shell:
+      cmd: step ca bootstrap --force --ca-url {{ url }} --fingerprint {{ fingerprint }}
+      chdir: /root
+    timeout: 10
+    become: yes
+
+  - name: Install git
+    apt: name=git state=latest
+    become: yes
+
+  - name: Download acme.sh
+    ansible.builtin.shell:
+      cmd: git clone https://github.com/acmesh-official/acme.sh.git
+      chdir: /root
+      creates: /root/acme.sh
+    timeout: 10
+    become: yes
+
+  - name: Install acme.sh
+    ansible.builtin.shell:
+      cmd: sh acme.sh --install --nocron
+      chdir: /root/acme.sh
+    timeout: 10
+    become: yes
+
+  - name: Install nginx
+    apt: name=nginx state=latest
+    become: yes
+
+  - name: Register hostname to be used in certificate
+    ansible.builtin.shell: /usr/bin/hostname
+    register: host
+    ignore_errors: true
+
+  - name: Set servername in nginx conf
+    become: yes
+    replace:
+      path: /etc/nginx/sites-enabled/default
+      regexp: 'server_name _;'
+      replace: 'server_name {{ host.stdout }}.{{ domain }};'
+    notify:
+      - Start/restart nginx
+
+  - name: Issue certificate 
+    ansible.builtin.shell:
+      cmd: sh acme.sh --issue --nginx -d {{ host.stdout }}.{{ domain }} --server {{ url }}/acme/acme/directory --ca-bundle /root/.step/certs/root_ca.crt --force
+      chdir: /root/acme.sh
+    become: yes
+
+  - name: Create directory in nginx folder for certificate
+    file:
+      path: /etc/nginx/certs
+      state: directory
+    become: yes
+
+  - name: Install certificate in the nginx folder 
+    ansible.builtin.shell:
+      cmd: sh acme.sh --install-cert -d {{ host.stdout }}.{{ domain }} --key-file /etc/nginx/certs/key.pem --fullchain-file /etc/nginx/certs/cert.pem --reloadcmd "service nginx force-reload"
+      chdir: /root/acme.sh
+    become: yes
+
+  - name: Creates a cron file for autorenewal under /etc/cron.d
+    ansible.builtin.cron:
+      name: smallstep autorenewal
+      hour: "*/8"
+      user: root
+      job: '"/root/.acme.sh"/acme.sh --cron --home "/root/.acme.sh" --force > /dev/null'
+      cron_file: smallstep-autorenewal
+    become: yes
+
+  - name: Copy over nginx configuration file
+    ansible.builtin.template:
+      src: templates/nginx_proxy.j2
+      dest: /etc/nginx/sites-available/default
+    become: yes
+    notify:
+      - Start/restart nginx
+
